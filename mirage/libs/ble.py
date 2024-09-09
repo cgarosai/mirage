@@ -674,6 +674,8 @@ class BLEEmitter(wireless.Emitter):
 					elif (
 						isinstance(packet,BLESecurityRequest) or
 						isinstance(packet,BLEPairingRequest) or
+						isinstance(packet,BLEPairingPublicKey) or
+						isinstance(packet,BLEPairingDHKeyCheck) or
 						isinstance(packet,BLEPairingResponse) or
 						isinstance(packet,BLEPairingFailed) or
 						isinstance(packet,BLEPairingConfirm) or
@@ -721,7 +723,18 @@ class BLEEmitter(wireless.Emitter):
 								max_key_size = packet.maxKeySize,
 								initiator_key_distribution=packet.initiatorKeyDistribution,
 								responder_key_distribution = packet.responderKeyDistribution)
-
+					
+					elif isinstance(packet,BLEPairingPublicKey):
+						packet.packet /= SM_Public_Key(
+								key_x=packet.X,
+								key_y=packet.Y
+								)
+					
+					elif isinstance(packet,BLEPairingDHKeyCheck):
+						packet.packet /= SM_DHKey_Check(
+								dhkey_check=packet.dhkey_check
+								)
+					
 					elif isinstance(packet,BLEPairingFailed):
 						packet.packet /= SM_Failed(reason=packet.reason)
 
@@ -1057,6 +1070,17 @@ class BLEReceiver(wireless.Receiver):
 						initiatorKeyDistribution=packet.initiator_key_distribution,
 						responderKeyDistribution=packet.responder_key_distribution,
 						payload=raw(packet[SM_Hdr:]))
+
+				elif SM_Public_Key in packet:
+					return BLEPairingPublicKey(
+						X=packet.key_x,
+						Y=packet.key_y
+					)
+
+				elif SM_DHKey_Check in packet:
+					return BLEPairingDHKeyCheck(
+						dhkey_check=packet.dhkey_check
+					)
 
 				elif SM_Failed in packet:
 					return BLEPairingFailed(
@@ -1424,6 +1448,17 @@ class BLEReceiver(wireless.Receiver):
 								initiatorKeyDistribution=packet.initiator_key_distribution,
 								responderKeyDistribution=packet.responder_key_distribution,
 								payload=raw(packet[SM_Hdr:]))
+
+						elif SM_Public_Key in packet:
+							new = BLEPairingPublicKey(
+								X=packet.key_x,
+								Y=packet.key_y
+							)
+
+						elif SM_DHKey_Check in packet:
+							new = BLEPairingDHKeyCheck(
+								dhkey_check=packet.dhkey_check
+							)						
 
 						elif SM_Failed in packet:
 							new = BLEPairingFailed(reason=packet.reason)

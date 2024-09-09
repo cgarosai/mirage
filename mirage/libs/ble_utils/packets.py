@@ -1250,6 +1250,53 @@ class BLEPairingResponse(BLEPacket):
 	def toString(self):
 		return "<< "+self.name+" | outOfBand="+("yes" if self.outOfBand else "no")+" | inputOutputCapability="+hex(self.inputOutputCapability)+" | authentication="+hex(self.authentication)+" | maxKeySize="+str(self.maxKeySize)+" | initiatorKeyDistribution="+hex(self.initiatorKeyDistribution)+" | responderKeyDistribution="+hex(self.responderKeyDistribution)+" >>"
 
+class BLEPairingPublicKey(BLEPacket):
+	'''
+	Mirage Bluetooth Low Energy Packet - Pairing Public Key
+
+	:param X: X part of the public key
+	:type X: bytes
+	:param Y: Y part of the public key
+	:type Y: bytes
+
+
+	:Example:
+		
+		>>> emitter.sendp(ble.BLEPairingPublicKey(X=bytes.fromhex("8a3abcabc7cd0e526df8e9f761624bcd46278a328eefb4d7f6b3ed894181e020"), Y=bytes.fromhex("e4efe9b8f9cc52408d2983c2c3b5ab673f6ab84a2477102853f07120a4bd9244")))
+
+	'''
+	def __init__(self,connectionHandle = -1, X=bytes.fromhex("8a3abcabc7cd0e526df8e9f761624bcd46278a328eefb4d7f6b3ed894181e020"), Y=bytes.fromhex("e4efe9b8f9cc52408d2983c2c3b5ab673f6ab84a2477102853f07120a4bd9244")):
+		super().__init__()
+		self.connectionHandle = connectionHandle
+		self.X = X
+		self.Y = Y
+		self.name = "BLE - Pairing Public Key"
+	def toString(self):
+		return "<< "+self.name+" X="+self.X.hex()+ " | Y=" + self.Y.hex() +" >>"
+
+class BLEPairingDHKeyCheck(BLEPacket):
+	'''
+	Mirage Bluetooth Low Energy Packet - Pairing DHKey Check
+
+	:param dhkey_check: computed DHKey Check
+	:type dhkey_check: bytes
+
+
+	:Example:
+		
+		>>> emitter.sendp(ble.BLEPairingDHKeyCheck(dhkey_check=bytes.fromhex("3ff867e99f6b8a5e32dd0c03aaa0e916")))
+
+	'''
+	def __init__(self,connectionHandle = -1, dhkey_check=b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'):
+		super().__init__()
+		self.connectionHandle = connectionHandle
+		self.dhkey_check = dhkey_check
+		self.name = "BLE - Pairing DHKey Check"
+	def toString(self):
+		return "<< "+self.name+" DHKey Check="+self.dhkey_check.hex()+" >>"
+
+
+
 class BLEPairingConfirm(BLEPacket):
 	'''
 	Mirage Bluetooth Low Energy Packet - Pairing Confirm
@@ -1458,5 +1505,4 @@ class BLELongTermKeyRequestReply(BLEPacket):
 		self.name = "BLE - Long Term Key Request Reply"
 	def toString(self):
 		return "<< "+self.name+" "+("(positive) | ltk="+self.ltk.hex() if self.positive else "(negative)")+" >>"
-
 

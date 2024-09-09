@@ -1,4 +1,7 @@
 from Cryptodome.Cipher import AES
+from Cryptodome.PublicKey import ECC
+from Cryptodome.Hash import CMAC
+from Cryptodome.Protocol.DH import key_agreement
 from os import urandom
 from multiprocessing import Process, Manager,cpu_count
 import time,struct
@@ -277,7 +280,136 @@ class BLECrypto:
 		p2 = b"\x00\x00\x00\x00" + iAddr + rAddr
 		return cls.xor128(cls.em1(key,cls.xor128(cls.em1(key,confirm),p2)),p1)
 
+	@classmethod
+	def f4(U,V,X,Z):
+		'''
+		This class method implements the function f4 which is used for confirm value generation
 
+		:param U: 256 bits public key X
+		:type U: bytes
+		:param V: 256 bits public key X
+		:type V: bytes
+		:param X: 128 bits encryption key
+		:type X: bytes
+		:param Z: 8 bits zero
+		:type Z: bytes
+		:return result of f4
+		:rtype: bytes
+
+		.. seealso::
+
+			This function is described in Bluetooth Core Specification, [Vol 3] Part H, Section 2.2.6
+			
+		'''
+		blockToCypher = b''.join([U,V,Z])
+		cipher = CMAC.new(X, ciphermod=AES)
+		cipher.update(blockToCypher)
+		return cipher.digest()
+
+
+	@classmethod
+	def f5(W,N1,N2,A1, A2):
+		'''
+		This class method implements the function f5 which is used for generate LTK and MacKey
+
+		:param W: 256 bits DHKey
+		:type W: bytes
+		:param N1: 128 bits Master Nonce
+		:type N1: bytes
+		:param N2: 128 bits Slave Nonce
+		:type N2: bytes
+		:param A1: 56 bits Master Address
+		:type A1: bytes
+  		:param A2: 56 bits Slave Address
+		:type A2: bytes
+		:return result of f5 as an array [MacKey, LTK]
+		:rtype: array of bytes
+
+		.. seealso::
+
+			This function is described in Bluetooth Core Specification, [Vol 3] Part H, Section 2.2.7
+			
+		'''
+		salt = bytes.fromhex("6C888391AAF5A53860370BDB5A6083BE")
+
+		cipherT = CMAC.new(salt, ciphermod=AES)
+		cipherT.update(W)
+		T = cipherT.digest()
+
+		keyID = bytes.fromhex("62746c65")
+		length = bytes.fromhex("0100")
+		blockToCypherMacKey = b''.join([b'\x00',keyID,N1,N2,A1,A2,length])
+		cipherMK = CMAC.new(T, ciphermod=AES)
+		cipherMK.update(blockToCypherMacKey)
+
+		blockToCypherLTK = b''.join([b'\x01',keyID,N1,N2,A1,A2,length])
+		cipherLTK = CMAC.new(T, ciphermod=AES)
+		cipherLTK.update(blockToCypherLTK)
+
+		return ([cipherMK.digest(), cipherLTK.digest()])
+
+	@classmethod
+	def f6(W,N1,N2,R,IOcap,A1,A2):
+		'''
+		This class method implements the function f6 which is used for generate Check value
+
+		:param W: 128 bits DHKey
+		:type W: bytes
+		:param N1: 128 bits Master Nonce
+		:type N1: bytes
+		:param N2: 128 bits Slave Nonce
+		:type N2: bytes
+  		:param R: 128 bits Random OOB Data
+		:type R: bytes
+		:param IOcap: 24 bits Slave Nonce
+		:type IOcap: bytes
+		:param A1: 56 bits Master Address
+		:type A1: bytes
+  		:param A2: 56 bits Slave Address
+		:type A2: bytes
+		:return result of f6 
+		:rtype: bytes
+
+		.. seealso::
+
+			This function is described in Bluetooth Core Specification, [Vol 3] Part H, Section 2.2.8
+			
+		'''
+		
+		blockToCypher = b''.join([N1,N2,R, IOcap, A1,A2])
+
+		cipher = CMAC.new(W, ciphermod=AES)
+		cipher.update(blockToCypher)
+		return cipher.digest()
+
+
+	@classmethod
+	def p256(privateKey, publicKeyX, publicKeyY):
+		def kdf(x):
+			return x
+		'''
+		This class method implements the function f6 which is used for generate Check value
+
+		:param privateKey: 128 bits Private Key
+		:type privateKey: bytes
+		:param publicKey: 128 bits Public Key
+		:type publicKey: bytes
+
+		:return DHKey
+		:rtype: bytes
+
+		.. seealso::
+
+			This function is described in Bluetooth Core Specification, [Vol 3] Part H, Section 2.3.5.6.1
+			
+		'''
+		privateKey = ECC.generate(curve='p256')
+		publicKey = privateKey.public_key()
+		#publicKey = ECC.construct(curve='p256', point_x=int.from_bytes(publicKeyX), point_y=int.from_bytes(publicKeyY))
+		
+		
+		return key_agreement(static_priv=privateKey, static_pub=publicKey, kdf=kdf)
+  
 
 
 class BLELinkLayerCrypto(object):
