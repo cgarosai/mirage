@@ -1,7 +1,9 @@
 from Cryptodome.Cipher import AES
-from Cryptodome.PublicKey import ECC
 from Cryptodome.Hash import CMAC
-from Cryptodome.Protocol.DH import key_agreement
+from Cryptodome.Random import get_random_bytes
+from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, \
+    generate_private_key, derive_private_key, EllipticCurvePublicNumbers, \
+    ECDH
 from os import urandom
 from multiprocessing import Process, Manager,cpu_count
 import time,struct
@@ -280,6 +282,14 @@ class BLECrypto:
 		p2 = b"\x00\x00\x00\x00" + iAddr + rAddr
 		return cls.xor128(cls.em1(key,cls.xor128(cls.em1(key,confirm),p2)),p1)
 
+	def aes_cmac(key, message):
+		"""
+		Implements the AES-CMAC authentication function AES_CMAC, defined in Bluetooth Core Specification, [Vol 3] Part H, Section 2.2.5.
+		"""
+		cmac = CMAC.new(key, ciphermod=AES)
+		cmac.update(message)
+		return cmac.digest()
+
 	@classmethod
 	def f4(U,V,X,Z):
 		'''
@@ -301,10 +311,7 @@ class BLECrypto:
 			This function is described in Bluetooth Core Specification, [Vol 3] Part H, Section 2.2.6
 			
 		'''
-		blockToCypher = b''.join([U,V,Z])
-		cipher = CMAC.new(X, ciphermod=AES)
-		cipher.update(blockToCypher)
-		return cipher.digest()
+		return aes_cmac(X,U + V + Z)
 
 
 	@classmethod
@@ -332,21 +339,12 @@ class BLECrypto:
 		'''
 		salt = bytes.fromhex("6C888391AAF5A53860370BDB5A6083BE")
 
-		cipherT = CMAC.new(salt, ciphermod=AES)
-		cipherT.update(W)
-		T = cipherT.digest()
+		T = aes_cmac(salt, W)
 
-		keyID = bytes.fromhex("62746c65")
-		length = bytes.fromhex("0100")
-		blockToCypherMacKey = b''.join([b'\x00',keyID,N1,N2,A1,A2,length])
-		cipherMK = CMAC.new(T, ciphermod=AES)
-		cipherMK.update(blockToCypherMacKey)
-
-		blockToCypherLTK = b''.join([b'\x01',keyID,N1,N2,A1,A2,length])
-		cipherLTK = CMAC.new(T, ciphermod=AES)
-		cipherLTK.update(blockToCypherLTK)
-
-		return ([cipherMK.digest(), cipherLTK.digest()])
+		return (
+				aes_cmac(T, b"\x01" + b"\x62\x74\x6c\x65" + N1 + N2 + A1 + A2 + b"\x01\x00") +
+				aes_cmac(T, b"\x00" + b"\x62\x74\x6c\x65" + N1 + N2 + A1 + A2 + b"\x01\x00")
+		)
 
 	@classmethod
 	def f6(W,N1,N2,R,IOcap,A1,A2):
@@ -375,40 +373,53 @@ class BLECrypto:
 			This function is described in Bluetooth Core Specification, [Vol 3] Part H, Section 2.2.8
 			
 		'''
-		
-		blockToCypher = b''.join([N1,N2,R, IOcap, A1,A2])
-
-		cipher = CMAC.new(W, ciphermod=AES)
-		cipher.update(blockToCypher)
-		return cipher.digest()
+		return (
+				aes_cmac(W, N1 + N2 + R + IOcap + A1 + A2)
+		)
 
 
-	@classmethod
-	def p256(privateKey, publicKeyX, publicKeyY):
-		def kdf(x):
-			return x
-		'''
-		This class method implements the function f6 which is used for generate Check value
+	def g2(U, V, X , Y):
+		"""
+		Implements the numeric comparison value generation function g2 defined in Bluetooth Core Specification, [Vol 3] Part H, Section 2.2.9.
+		"""
+		return (
+				aes_cmac(X,U+V+Y)[-4:]
+		)
+  
+	def h7(salt, W):
+		"""
+		Implements the link key conversion function h7 defined in Bluetooth Core Specification, [Vol 3] Part H, Section 2.2.11.
+		"""
+		return (
+				aes_cmac(salt,W)
+		)
 
-		:param privateKey: 128 bits Private Key
-		:type privateKey: bytes
-		:param publicKey: 128 bits Public Key
-		:type publicKey: bytes
+	def generate_p256_keypair(private_number=None):
+		"""
+		Generate a P256 valid secret key and the associated public key.
+		If a private number is provided, use it to derive the private key.
+		Otherwise, generate it from scratch.
+		"""
+		if private_number is None:
+			private_key = generate_private_key(SECP256R1())
+		else:
+			private_key = derive_private_key(private_number, SECP256R1())
 
-		:return DHKey
-		:rtype: bytes
+		return private_key, private_key.public_key()
 
-		.. seealso::
+	def generate_public_key_from_coordinates(x, y):
+		"""
+		Generate the associated public key from the X and Y coordinates on the curve.
+		"""
+		return EllipticCurvePublicNumbers(x, y, SECP256R1()).public_key()
 
-			This function is described in Bluetooth Core Specification, [Vol 3] Part H, Section 2.3.5.6.1
-			
-		'''
-		privateKey = ECC.generate(curve='p256')
-		publicKey = privateKey.public_key()
-		#publicKey = ECC.construct(curve='p256', point_x=int.from_bytes(publicKeyX), point_y=int.from_bytes(publicKeyY))
-		
-		
-		return key_agreement(static_priv=privateKey, static_pub=publicKey, kdf=kdf)
+	def generate_diffie_hellman_shared_secret(own_private_key, peer_public_key):
+		"""
+		Generate the shared secret from a private key and the peer public key.
+		"""
+		shared_key = own_private_key.exchange(ECDH(), peer_public_key)
+		return shared_key
+
   
 
 

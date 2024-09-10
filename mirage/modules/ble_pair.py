@@ -20,6 +20,7 @@ class ble_pair(module.WirelessModule):
 				"ADDR_TYPE":"",
 				"ADDR":"",
 				"CSRK":"",
+				"OOB": "no",
 				"KEYBOARD":"yes",
 				"YESNO":"yes",
 				"DISPLAY":"yes",
@@ -31,7 +32,7 @@ class ble_pair(module.WirelessModule):
 			}
 
 		self.useOOB = False
-		self.oobData = None
+		self.oobData = bytes.fromhex("00000000000000000000000000000000")
 		self.checkMitm = False
 		self.ioCapabilities = False
 		self.justWorks = False
@@ -44,11 +45,10 @@ class ble_pair(module.WirelessModule):
 
 		self.pairingMethod = None
 
-		self.mPairingPublicKeyX = None
-		self.mPairingPublicKeyY = None
-
-		self.sPairingPublicKeyX = None
-		self.sPairingPublicKeyY = None
+		self.mPublicKey
+		self.sPublicKey
+  
+		self.privateKey
   
 		self.DHKey = None
 
@@ -169,7 +169,7 @@ class ble_pair(module.WirelessModule):
 			pinCode = 0
 		elif pairingMethod == "OutOfBonds":
 			io.info("Starting computing OOB DATA")
-			self.emitter.sendp(ble.BLEPairingPublicKey(X="8a3abcabc7cd0e526df8e9f761624bcd46278a328eefb4d7f6b3ed894181e020", Y="e4efe9b8f9cc52408d2983c2c3b5ab673f6ab84a2477102853f07120a4bd9244"))
+			self.emitter.sendp(ble.BLEPairingPublicKey())
 		else:
 			if self.args["PIN"] != "" and utils.isNumber(self.args["PIN"]):
 				pinCode = int(self.args["PIN"])
@@ -378,27 +378,17 @@ class ble_pair(module.WirelessModule):
 		self.emitter.sendp(self.pairingResponse)
 
 
-		
-
-
 
 	def masterPairingPublicKey(self, pkt):
 		pkt.show()
-		self.mPairingPublicKeyX = pkt.X
-		self.mPairingPublicKeyY = pkt.Y
-		
-
-		## Hard Coded values for now
-		response = ble.BLEPairingPublicKey(X=bytes.fromhex("8a3abcabc7cd0e526df8e9f761624bcd46278a328eefb4d7f6b3ed894181e020"), Y=bytes.fromhex("e4efe9b8f9cc52408d2983c2c3b5ab673f6ab84a2477102853f07120a4bd9244"))
-
-		self.sPairingPublicKeyX = response.X
-		self.sPairingPublicKeyY = response.Y
-
+		self.mPublicKey = ble.BLECrypto.generate_public_key_from_coordinates(pkt.X, pkt.Y)
+		# Random generated for now
+		self.privateKey, self.sPublicKey = ble.BLECrypto.generate_p256_keypair()
+		response = ble.BLEPairingPublicKey(self.sPublicKey)
 		response.show()
-		## Hard Coded value for now
-		self.pairingPrivateKey = None
-
 		self.emitter.sendp(response)
+  
+  
 
 	def masterPairingConfirm(self,pkt):
 		pkt.show()
@@ -434,6 +424,8 @@ class ble_pair(module.WirelessModule):
 		confirmPacket.show()
 		self.emitter.sendp(confirmPacket)
 
+
+
 	def masterPairingRandom(self,pkt):
 		pkt.show()
 		self.mRand = pkt.random
@@ -444,7 +436,7 @@ class ble_pair(module.WirelessModule):
 		if self.pairingMethod == "OutOfBonds":
 			io.info("Flemme de vérifier la confirm value pour l'instant")
 			io.info("Generating DHKey")
-			self.DHKey = ble.BLECrypto.p256(self.pairingPrivateKey, self.mPairingPublicKeyX, self.mPairingPublicKeyX)
+			self.DHKey = ble.BLECrypto.generate_diffie_hellman_shared_secret(self.privateKey, self.mPublicKey)
 			io.info("Generating LTK and MacKey")
 			io.info(self.oobData)
 			self.macKey, self.ltk = ble.BLECrypto.f6(self.DHKey, self.mRand, self.sRand, self.oobData, self.ioCapabilities, self.initiatorAddress, self.responderAddress)
@@ -609,6 +601,7 @@ class ble_pair(module.WirelessModule):
 			ct2 = utils.booleanArg(self.args["CT2"])
 			mitm = utils.booleanArg(self.args["MITM"])
 			bonding = utils.booleanArg(self.args["BONDING"])
+			self.useOob = utils.booleanArg(self.args["OOB"])
 			secureConnections = utils.booleanArg(self.args["SECURE_CONNECTIONS"])
 			keyPress = utils.booleanArg(self.args["KEYPRESS"])
 

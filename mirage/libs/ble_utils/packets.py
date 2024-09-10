@@ -1265,11 +1265,12 @@ class BLEPairingPublicKey(BLEPacket):
 		>>> emitter.sendp(ble.BLEPairingPublicKey(X=bytes.fromhex("8a3abcabc7cd0e526df8e9f761624bcd46278a328eefb4d7f6b3ed894181e020"), Y=bytes.fromhex("e4efe9b8f9cc52408d2983c2c3b5ab673f6ab84a2477102853f07120a4bd9244")))
 
 	'''
-	def __init__(self,connectionHandle = -1, X=bytes.fromhex("8a3abcabc7cd0e526df8e9f761624bcd46278a328eefb4d7f6b3ed894181e020"), Y=bytes.fromhex("e4efe9b8f9cc52408d2983c2c3b5ab673f6ab84a2477102853f07120a4bd9244")):
+	def __init__(self, publicKey, connectionHandle = -1):
 		super().__init__()
 		self.connectionHandle = connectionHandle
-		self.X = X
-		self.Y = Y
+		
+		self.X = bytes.fromhex("{:064x}".format(publicKey.public_numbers().x))
+		self.Y = bytes.fromhex("{:064x}".format(publicKey.public_numbers().y))
 		self.name = "BLE - Pairing Public Key"
 	def toString(self):
 		return "<< "+self.name+" X="+self.X.hex()+ " | Y=" + self.Y.hex() +" >>"
