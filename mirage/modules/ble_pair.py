@@ -45,10 +45,10 @@ class ble_pair(module.WirelessModule):
 
 		self.pairingMethod = None
 
-		self.mPublicKey
-		self.sPublicKey
+		self.mPublicKey = None
+		self.sPublicKey = None
   
-		self.privateKey
+		self.privateKey = None
   
 		self.DHKey = None
 
@@ -381,10 +381,22 @@ class ble_pair(module.WirelessModule):
 
 	def masterPairingPublicKey(self, pkt):
 		pkt.show()
-		self.mPublicKey = ble.BLECrypto.generate_public_key_from_coordinates(pkt.X, pkt.Y)
-		# Random generated for now
+		self.mPublicKey = ble.BLECrypto.generate_public_key_from_coordinates(int.from_bytes(pkt.X, 'little'), int.from_bytes(pkt.Y, 'little'))
+		# Random values, what we should be doing
 		self.privateKey, self.sPublicKey = ble.BLECrypto.generate_p256_keypair()
-		response = ble.BLEPairingPublicKey(self.sPublicKey)
+		# response = ble.BLEPairingPublicKey(X=self.sPublicKey.public_numbers().x.to_bytes(32,'little'),Y=self.sPublicKey.public_numbers().y.to_bytes(32, 'little'))
+
+		# This is only for testing:
+		X=bytes.fromhex("8a3abcabc7cd0e526df8e9f761624bcd46278a328eefb4d7f6b3ed894181e020") 
+		Y=bytes.fromhex("e4efe9b8f9cc52408d2983c2c3b5ab673f6ab84a2477102853f07120a4bd9244")
+		# ICI mettre la private key de la GW et ça devrait être bon ! 
+		secretValue = 0
+  
+		# self.privateKey, self.sPublicKey = ble.BLECrypto.generate_p256_keypair(secretValue)
+		
+		response = ble.BLEPairingPublicKey(X=X, Y=Y)
+  
+
 		response.show()
 		self.emitter.sendp(response)
   
@@ -429,19 +441,34 @@ class ble_pair(module.WirelessModule):
 	def masterPairingRandom(self,pkt):
 		pkt.show()
 		self.mRand = pkt.random
-
-		response = ble.BLEPairingRandom(random=self.sRand)
-		self.emitter.sendp(response)
+		self.sRand = self.mRand
 
 		if self.pairingMethod == "OutOfBonds":
-			io.info("Flemme de vérifier la confirm value pour l'instant")
 			io.info("Generating DHKey")
 			self.DHKey = ble.BLECrypto.generate_diffie_hellman_shared_secret(self.privateKey, self.mPublicKey)
 			io.info("Generating LTK and MacKey")
-			io.info(self.oobData)
-			self.macKey, self.ltk = ble.BLECrypto.f6(self.DHKey, self.mRand, self.sRand, self.oobData, self.ioCapabilities, self.initiatorAddress, self.responderAddress)
-		
-			io.info(f"// DHKEY: {self.DHKey} // \n// MACKEY: {self.macKey}//\n//LTK: {self.ltk}")
+			self.ioCapabilities = bytes.fromhex("00")
+			io.info(self.DHKey.hex())
+			io.info(self.mRand.hex())
+			io.info(self.sRand.hex())
+			io.info(self.oobData.hex())
+			io.info(self.ioCapabilities.hex())
+			io.info(utils.convertAddressToBytes(self.initiatorAddress).hex())
+			io.info(utils.convertAddressToBytes(self.responderAddress).hex())
+			salt = bytes.fromhex("6C888391AAF5A53860370BDB5A6083BE")
+			T = ble.BLECrypto.aes_cmac(salt, self.DHKey)
+			io.info(T.hex())
+			self.macKey = ble.BLECrypto.aes_cmac(T, b"\x01" + b"\x62\x74\x6c\x65" + self.mRand + self.sRand + utils.convertAddressToBytes(self.initiatorAddress) + utils.convertAddressToBytes(self.responderAddress) + b"\x01\x00")
+			self.ltk = ble.BLECrypto.aes_cmac(T, b"\x00" + b"\x62\x74\x6c\x65" + self.mRand + self.sRand + utils.convertAddressToBytes(self.initiatorAddress) + utils.convertAddressToBytes(self.responderAddress) + b"\x01\x00")
+
+   			# self.macKey, self.ltk = ble.BLECrypto.f5(
+       		# 							self.DHKey, 
+            #     						self.mRand, 
+			# 							self.sRand, 
+          	# 							utils.convertAddressToBytes(self.initiatorAddress), 
+            #       						utils.convertAddressToBytes(self.responderAddress)
+            #             )
+			io.info("Finished computing ")
 		else:
 			mConfirm = ble.BLECrypto.c1(	self.tk,
 							self.mRand[::-1],
@@ -459,12 +486,14 @@ class ble_pair(module.WirelessModule):
 				io.fail("Confirm value failed ! Terminating ...")
 				self.failure = True
 	
+		response = ble.BLEPairingRandom(random=self.sRand)
+		self.emitter.sendp(response)
 	def masterPairingDHKeyCheck(self, pkt):
 		pkt.show()
 		self.mDHKeyCheck = pkt.dhkey_check
-
+		io.info("Generating DHKeyCheck")
 		# Compute DHKeyCheck
-		self.sDHKeyCheck = f6(self.macKey, self.sRand, self.mRand, self.oobData, self.ioCapabilities, self.responderAddress, self.initiatorAddress)
+		self.sDHKeyCheck = ble.BLECrypto.aes_cmac(self.macKey, self.mRand + self.sRand + self.oobData + self.ioCapabilities + self.sRand + utils.convertAddressToBytes(self.initiatorAddress) + utils.convertAddressToBytes(self.responderAddress))
 		response = ble.BLEPairingDHKeyCheck(dhkey_check=self.sDHKeyCheck)
 		response.show()
 		self.emitter.sendp(response)

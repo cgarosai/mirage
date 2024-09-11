@@ -337,13 +337,14 @@ class BLECrypto:
 			This function is described in Bluetooth Core Specification, [Vol 3] Part H, Section 2.2.7
 			
 		'''
+		io.info("trying to compute f5")
 		salt = bytes.fromhex("6C888391AAF5A53860370BDB5A6083BE")
 
-		T = aes_cmac(salt, W)
-
+		T = self.aes_cmac(salt, W)
+		
 		return (
-				aes_cmac(T, b"\x01" + b"\x62\x74\x6c\x65" + N1 + N2 + A1 + A2 + b"\x01\x00") +
-				aes_cmac(T, b"\x00" + b"\x62\x74\x6c\x65" + N1 + N2 + A1 + A2 + b"\x01\x00")
+				self.aes_cmac(T, b"\x01" + b"\x62\x74\x6c\x65" + N1 + N2 + A1 + A2 + b"\x01\x00"),
+				self.aes_cmac(T, b"\x00" + b"\x62\x74\x6c\x65" + N1 + N2 + A1 + A2 + b"\x01\x00")
 		)
 
 	@classmethod
@@ -351,7 +352,7 @@ class BLECrypto:
 		'''
 		This class method implements the function f6 which is used for generate Check value
 
-		:param W: 128 bits DHKey
+		:param W: 128 bits MacKey
 		:type W: bytes
 		:param N1: 128 bits Master Nonce
 		:type N1: bytes
@@ -374,7 +375,7 @@ class BLECrypto:
 			
 		'''
 		return (
-				aes_cmac(W, N1 + N2 + R + IOcap + A1 + A2)
+				self.aes_cmac(W, N1 + N2 + R + IOcap + A1 + A2)
 		)
 
 
@@ -383,7 +384,7 @@ class BLECrypto:
 		Implements the numeric comparison value generation function g2 defined in Bluetooth Core Specification, [Vol 3] Part H, Section 2.2.9.
 		"""
 		return (
-				aes_cmac(X,U+V+Y)[-4:]
+				self.aes_cmac(X,U+V+Y)[-4:]
 		)
   
 	def h7(salt, W):
@@ -391,7 +392,7 @@ class BLECrypto:
 		Implements the link key conversion function h7 defined in Bluetooth Core Specification, [Vol 3] Part H, Section 2.2.11.
 		"""
 		return (
-				aes_cmac(salt,W)
+				self.aes_cmac(salt,W)
 		)
 
 	def generate_p256_keypair(private_number=None):
