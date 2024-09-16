@@ -281,6 +281,7 @@ class BLECrypto:
 		p1 = payloadResponse + payloadRequest + responderAddressType + initiatorAddressType
 		p2 = b"\x00\x00\x00\x00" + iAddr + rAddr
 		return cls.xor128(cls.em1(key,cls.xor128(cls.em1(key,confirm),p2)),p1)
+	
 
 	def aes_cmac(key, message):
 		"""
@@ -290,7 +291,7 @@ class BLECrypto:
 		cmac.update(message)
 		return cmac.digest()
 
-	@classmethod
+
 	def f4(U,V,X,Z):
 		'''
 		This class method implements the function f4 which is used for confirm value generation

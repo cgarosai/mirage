@@ -414,5 +414,5 @@ def getRandomAddress():
 		random.randint(0, 255)
 		)).upper()
 
-def convertAddressToBytes(addr):
-    return bytes.fromhex(addr[0:2]+addr[3:5]+addr[6:8]+addr[9:11]+addr[12:14]+addr[15:17])
+def convertAddressToBytes(addr, addr_type):
+    return (b"\x00" + addr_type + bytes.fromhex(addr[0:2]+addr[3:5]+addr[6:8]+addr[9:11]+addr[12:14]+addr[15:17]))
