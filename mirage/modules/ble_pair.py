@@ -32,7 +32,7 @@ class ble_pair(module.WirelessModule):
 			}
 
 		self.useOOB = False
-		self.oobData = bytes.fromhex("***REMOVED***")
+		self.oobData = b"\x00"*16
 		self.checkMitm = False
 		self.ioCapabilities = False
 		self.justWorks = False
@@ -47,7 +47,7 @@ class ble_pair(module.WirelessModule):
 
 		self.mPublicKey = None
 		self.sPublicKey = None
-		self.secretValue = bytes.fromhex("***REMOVED***")
+		self.secretValue = None
 		self.privateKey = None
   
 		self.DHKey = None
