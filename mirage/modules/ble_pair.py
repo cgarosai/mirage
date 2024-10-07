@@ -46,9 +46,8 @@ class ble_pair(module.WirelessModule):
 		self.pairingMethod = None
 
 		self.mPublicKey = None
-		self.sPublicKey = None
-		self.secretValue = None
-		self.privateKey = None
+		self.privateKey, self.sPublicKey = ble.BLECrypto.generate_p256_keypair(private_number=int.from_bytes(bytes.fromhex("0000")[::-1]))
+
   
 		self.DHKey = None
 
@@ -383,12 +382,11 @@ class ble_pair(module.WirelessModule):
 	def masterPairingPublicKey(self, pkt):
 		pkt.show()
 		self.mPublicKey = ble.BLECrypto.generate_public_key_from_coordinates(int.from_bytes(pkt.X, 'little'), int.from_bytes(pkt.Y, 'little'))
-		# using the secretValue 
-		self.privateKey, self.sPublicKey = ble.BLECrypto.generate_p256_keypair(private_number=int.from_bytes(self.secretValue, 'little'))
 		response = ble.BLEPairingPublicKey(X=self.sPublicKey.public_numbers().x.to_bytes(32,'little'),Y=self.sPublicKey.public_numbers().y.to_bytes(32, 'little'))
-		self.DHKey = ble.BLECrypto.generate_diffie_hellman_shared_secret(self.privateKey, self.mPublicKey)
-		io.info(f"DHKey: {self.DHKey.hex()}")
 		response.show()
+		self.DHKey = ble.BLECrypto.generate_diffie_hellman_shared_secret(self.privateKey, self.mPublicKey)
+
+		io.info(f"DHKey: {self.DHKey.hex()}")
 		self.emitter.sendp(response)
 		if self.secureConnections: 
 			if self.pairingMethod == "SCJustWorks":
@@ -465,18 +463,7 @@ class ble_pair(module.WirelessModule):
 			io.info(self.ioCapabilities.hex())
 			io.info(utils.convertAddressToBytes(self.initiatorAddress, self.initiatorAddressType).hex())
 			io.info(utils.convertAddressToBytes(self.responderAddress, self.responderAddressType).hex())
-			salt = bytes.fromhex("6C888391AAF5A53860370BDB5A6083BE")
-			T = ble.BLECrypto.aes_cmac(salt, self.DHKey)
-			self.macKey = ble.BLECrypto.aes_cmac(T, b"\x00" + b"\x62\x74\x6c\x65" + self.mRand + self.sRand + utils.convertAddressToBytes(self.initiatorAddress, self.initiatorAddressType) + utils.convertAddressToBytes(self.responderAddress, self.responderAddressType) + b"\x01\x00")
-			self.ltk = ble.BLECrypto.aes_cmac(T, b"\x01" + b"\x62\x74\x6c\x65" + self.mRand + self.sRand + utils.convertAddressToBytes(self.initiatorAddress, self.initiatorAddressType) + utils.convertAddressToBytes(self.responderAddress, self.responderAddressType) + b"\x01\x00")
-
-   			# self.macKey, self.ltk = ble.BLECrypto.f5(
-       		# 							self.DHKey, 
-            #     						self.mRand, 
-			# 							self.sRand, 
-          	# 							utils.convertAddressToBytes(self.initiatorAddress), 
-            #       						utils.convertAddressToBytes(self.responderAddress)
-            #             )
+			self.macKey, self.ltk = ble.BLECrypto.f5(self.DHKey, self.mRand, self.sRand, utils.convertAddressToBytes(self.initiatorAddress, self.initiatorAddressType), utils.convertAddressToBytes(self.responderAddress, self.responderAddressType))
 			io.info("Finished computing ")
 		elif self.pairingMethod == "SCJustWorks":
 			io.info("Generating DHKey")
@@ -514,7 +501,8 @@ class ble_pair(module.WirelessModule):
 		# Compute DHKeyCheck
 		io.info("Generating DHKeyCheck")
 		if self.pairingMethod == "OutOfBonds":
-			self.sDHKeyCheck = ble.BLECrypto.aes_cmac(self.macKey, self.sRand + self.mRand + self.oobData + self.ioCapabilities + utils.convertAddressToBytes(self.responderAddress, self.responderAddressType) + utils.convertAddressToBytes(self.initiatorAddress, self.initiatorAddressType))
+			self.oobData = b"\x00"*16
+			self.sDHKeyCheck = ble.BLECrypto.f6(self.macKey, self.sRand, self.mRand, self.oobData, self.ioCapabilities, utils.convertAddressToBytes(self.responderAddress, self.responderAddressType), utils.convertAddressToBytes(self.initiatorAddress, self.initiatorAddressType))
 		elif self.pairingMethod == "SCJustWorks":
 			self.sDHKeyCheck = ble.BLECrypto.aes_cmac(self.macKey, self.sRand + self.mRand + b"\x00"*16 + self.ioCapabilities + utils.convertAddressToBytes(self.responderAddress) + utils.convertAddressToBytes(self.initiatorAddress))
   		
@@ -538,12 +526,20 @@ class ble_pair(module.WirelessModule):
 			keyDistribution = self.responderKeyDistribution
 		if keyDistribution.encKey:
 			io.info("Sending LTK...")
-			self.emitter.sendp(ble.BLEEncryptionInformation(ltk=bytes.fromhex(self.args["LTK"])[::-1]))
-			self.emitter.sendp(ble.BLEMasterIdentification(
-									ediv=utils.integerArg(self.args["EDIV"]),
-									rand=bytes.fromhex(self.args["RAND"])
-									))
-			io.success("Sent !")
+			if self.ltk:
+				self.emitter.sendp(ble.BLEEncryptionInformation(ltk=self.ltk[::-1]))
+				self.emitter.sendp(ble.BLEMasterIdentification(
+										ediv=0,
+										rand=b"\x00"*8
+										))
+				io.success("Sent !")
+			else:
+				self.emitter.sendp(ble.BLEEncryptionInformation(ltk=bytes.fromhex(self.args["LTK"])[::-1]))
+				self.emitter.sendp(ble.BLEMasterIdentification(
+										ediv=utils.integerArg(self.args["EDIV"]),
+										rand=bytes.fromhex(self.args["RAND"])
+										))
+				io.success("Sent !")
 		if keyDistribution.idKey:
 			io.info("Sending IRK...")
 			self.emitter.sendp(ble.BLEIdentityInformation(irk=bytes.fromhex(self.args["IRK"])[::-1]))
@@ -563,8 +559,9 @@ class ble_pair(module.WirelessModule):
 		if pkt.ediv == 0 and pkt.rand == b"\x00"*8 and self.stk != b"\x00" * 8:
 			self.emitter.sendp(ble.BLELongTermKeyRequestReply(positive=True, ltk=self.stk[::-1]))
 			self.keyDistribution(type="responder")
-		
-
+		elif pkt.ediv == 0 and pkt.rand == b"\x00"*8 and self.ltk != b"\x00"*8:
+			self.emitter.sendp(ble.BLELongTermKeyRequestReply(positive=True, ltk=self.ltk[::-1]))
+			self.keyDistribution(type="responder")
 		elif pkt.ediv == utils.integerArg(self.args["EDIV"]) and pkt.rand == bytes.fromhex(self.args["RAND"]):
 			self.emitter.sendp(ble.BLELongTermKeyRequestReply(positive=True, ltk=bytes.fromhex(self.args["LTK"])[::-1]))
 		else:

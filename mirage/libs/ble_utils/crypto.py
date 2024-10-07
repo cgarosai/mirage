@@ -9,6 +9,13 @@ from multiprocessing import Process, Manager,cpu_count
 import time,struct
 from mirage.libs import io
 
+def aes_cmac(key, message):
+	"""
+	Implements the AES-CMAC authentication function AES_CMAC, defined in Bluetooth Core Specification, [Vol 3] Part H, Section 2.2.5.
+	"""
+	cmac = CMAC.new(key, ciphermod=AES)
+	cmac.update(message)
+	return cmac.digest()
 class BLECrypto:
 	'''
 	This class provides some cryptographic functions used by the Security Manager.
@@ -283,15 +290,6 @@ class BLECrypto:
 		return cls.xor128(cls.em1(key,cls.xor128(cls.em1(key,confirm),p2)),p1)
 	
 
-	def aes_cmac(key, message):
-		"""
-		Implements the AES-CMAC authentication function AES_CMAC, defined in Bluetooth Core Specification, [Vol 3] Part H, Section 2.2.5.
-		"""
-		cmac = CMAC.new(key, ciphermod=AES)
-		cmac.update(message)
-		return cmac.digest()
-
-
 	def f4(U,V,X,Z):
 		'''
 		This class method implements the function f4 which is used for confirm value generation
@@ -312,10 +310,9 @@ class BLECrypto:
 			This function is described in Bluetooth Core Specification, [Vol 3] Part H, Section 2.2.6
 			
 		'''
-		return aes_cmac(X,U + V + Z)
+		return self.aes_cmac(X,U + V + Z)
 
 
-	@classmethod
 	def f5(W,N1,N2,A1, A2):
 		'''
 		This class method implements the function f5 which is used for generate LTK and MacKey
@@ -338,17 +335,16 @@ class BLECrypto:
 			This function is described in Bluetooth Core Specification, [Vol 3] Part H, Section 2.2.7
 			
 		'''
-		io.info("trying to compute f5")
 		salt = bytes.fromhex("6C888391AAF5A53860370BDB5A6083BE")
 
-		T = self.aes_cmac(salt, W)
+		T = aes_cmac(salt, W)
 		
+		io.info("trying to compute f5")
 		return (
-				self.aes_cmac(T, b"\x01" + b"\x62\x74\x6c\x65" + N1 + N2 + A1 + A2 + b"\x01\x00"),
-				self.aes_cmac(T, b"\x00" + b"\x62\x74\x6c\x65" + N1 + N2 + A1 + A2 + b"\x01\x00")
+				aes_cmac(T, b"\x00" + b"\x62\x74\x6c\x65" + N1 + N2 + A1 + A2 + b"\x01\x00"),
+				aes_cmac(T, b"\x01" + b"\x62\x74\x6c\x65" + N1 + N2 + A1 + A2 + b"\x01\x00")
 		)
 
-	@classmethod
 	def f6(W,N1,N2,R,IOcap,A1,A2):
 		'''
 		This class method implements the function f6 which is used for generate Check value
@@ -376,7 +372,7 @@ class BLECrypto:
 			
 		'''
 		return (
-				self.aes_cmac(W, N1 + N2 + R + IOcap + A1 + A2)
+				aes_cmac(W, N1 + N2 + R + IOcap + A1 + A2)
 		)
 
 
